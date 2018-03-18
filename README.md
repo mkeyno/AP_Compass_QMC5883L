@@ -10,5 +10,6 @@ add #define HAL_COMPASS_QMC5883L  5                                      in AP_H
 set  #define CONFIG_COMPASS 	 HAL_Compass_QMC5883L        in config.h      header file
 set
   #elif CONFIG_COMPASS == HAL_Compass_QMC5883L   
+  
 											static AP_Compass_QMC5883L compass; 
 in ArduCopter.pde       header file
