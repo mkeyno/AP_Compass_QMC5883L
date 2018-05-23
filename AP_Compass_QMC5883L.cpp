@@ -30,8 +30,8 @@ extern const AP_HAL::HAL& hal;
 #define Mode_Standby    0x00
 #define Mode_Continuous 0x01
 
-#define BaseReg         0b00010101
-
+#define BaseReg         0b00011101 ///0b00010101
+                        
 #define ODR_10Hz        0b00000000
 #define ODR_50Hz        0b00000100
 #define ODR_100Hz       0b00001000
@@ -48,7 +48,11 @@ extern const AP_HAL::HAL& hal;
 // read_register - read a register value
 bool AP_Compass_QMC5883L::read_register(uint8_t address, uint8_t *value)
 {
-    if (hal.i2c->readRegister((uint8_t)COMPASS_ADDRESS, address, value) != 0) { _healthy[0] = false; return false; }
+    if (hal.i2c->readRegister((uint8_t)COMPASS_ADDRESS, address, value) != 0) {
+		_healthy[0] = false; 
+	//	hal.console->printf_P(PSTR("fail read %X\n"), address);
+		return false; }
+	//	hal.console->printf_P(PSTR("suc read %X -> %X\n"), address,value);
     return true;
 }
 
@@ -58,14 +62,17 @@ bool AP_Compass_QMC5883L::write_register(uint8_t address, uint8_t value)
     if (hal.i2c->writeRegister((uint8_t)COMPASS_ADDRESS, address, value) != 0) {
         _healthy[0] = false;
         return false;
+		// hal.console->printf_P(PSTR("fail write %X\n"), address);
     }
+	// hal.console->printf_P(PSTR("suc write %X\n"), address);
     return true;
 }
 
 // Read Sensor data
 bool AP_Compass_QMC5883L::read_raw()
 {
-    uint8_t buff[6];
+   
+	uint8_t buff[6];
                //readRegisters(uint8_t addr,   reg,   len, uint8_t* data);
     if (hal.i2c->readRegisters(COMPASS_ADDRESS, 0x00, 6, buff) != 0) 
 	{
@@ -76,16 +83,16 @@ bool AP_Compass_QMC5883L::read_raw()
     }	
 
     int16_t rx, ry, rz;
-    rx = (((int16_t)buff[0]) << 8) | buff[1];
-    ry = (((int16_t)buff[2]) << 8) | buff[3];
-    rz = (((int16_t)buff[4]) << 8) | buff[5];
+    rx = (((int16_t)buff[1]) << 8) | buff[0];
+    ry = (((int16_t)buff[3]) << 8) | buff[2];
+    rz = (((int16_t)buff[5]) << 8) | buff[4];
 	
-    if (rx == -4096 || ry == -4096 || rz == -4096)  return false;  // no valid data available
+   // if (rx == -4096 || ry == -4096 || rz == -4096)  return false;  // no valid data available
 	
     _mag_x = -rx;
     _mag_y =  ry;
     _mag_z = -rz;
-
+ //hal.console->printf_P(PSTR("MagX: %d MagY: %d MagZ: %d\n"), (int)_mag_x, (int)_mag_y, (int)_mag_z);
     return true;
 }
 
@@ -132,7 +139,9 @@ void AP_Compass_QMC5883L::accumulate(void)
  */
 bool AP_Compass_QMC5883L::re_initialise()
 {
-    if (!write_register(ConfigRegA, _base_config) )     return false;
+  
+   if (!write_register(ConfigRegA, _base_config) )     return false;
+   // hal.console->printf_P(PSTR("re_initialise true\n"));
     return true;
 }
 
@@ -140,23 +149,25 @@ bool AP_Compass_QMC5883L::re_initialise()
 // Public Methods //////////////////////////////////////////////////////////////
 bool AP_Compass_QMC5883L::init()
 {
-    int numAttempts = 0, good_count = 0;
+    
+	int numAttempts = 0, good_count = 0;
     bool success = false;
     
     uint16_t expected_x = 715;
     uint16_t expected_yz = 715;
     float gain_multiple = 1.0;
 	
-  if (!write_register(ConfigRegB,0x80)) return false; //softReset         
+  if (!write_register(ConfigRegB,0x80)) return false; //softReset  must reset first         
   hal.scheduler->delay(10);
-  write_register(0x0B, 0x01);//SET/RESET Period
+       write_register(0x0B, 0x01);//SET/RESET Period
   
     _i2c_sem = hal.i2c->get_semaphore();
-    if (!_i2c_sem->take(HAL_SEMAPHORE_BLOCK_FOREVER))  hal.scheduler->panic(PSTR("Failed to get HMC5843 semaphore")); 
+    if (!_i2c_sem->take(HAL_SEMAPHORE_BLOCK_FOREVER))  hal.scheduler->panic(PSTR("Failed to get QMC5883L semaphore")); 
     // determine if we are using 5843 or 5883L
     _base_config = BaseReg;
-    if (  !write_register(ConfigRegA, Mode_Continuous | ODR_50Hz | Mode_Continuous| RNG_8G | OSR_512 ) 
-		|| !read_register(ConfigRegA, &_base_config)   ) 
+    if (  !write_register(ConfigRegA, Mode_Continuous | ODR_200Hz | Mode_Continuous| RNG_8G | OSR_512 ) 
+	//	|| !read_register(ConfigRegA, &_base_config)  
+	) 
 	{
         _healthy[0] = false;
         _i2c_sem->give();
@@ -192,12 +203,12 @@ bool AP_Compass_QMC5883L::init()
 
         float cal[3];
 
-        // hal.console->printf_P(PSTR("mag %d %d %d\n"), _mag_x, _mag_y, _mag_z);
+        //   hal.console->printf_P(PSTR("%d) mag: %d - %d - %d \n"),numAttempts, _mag_x, _mag_y, _mag_z);
         cal[0] = fabsf(expected_x / (float)_mag_x);
         cal[1] = fabsf(expected_yz / (float)_mag_y);
         cal[2] = fabsf(expected_yz / (float)_mag_z);
 
-        // hal.console->printf_P(PSTR("cal=%.2f %.2f %.2f\n"), cal[0], cal[1], cal[2]);
+        //  hal.console->printf_P(PSTR(" cal=%.2f   %.2f   %.2f\n"),numAttempts, cal[0], cal[1], cal[2]);
 
         // we throw away the first two samples as the compass may
         // still be changing its state from the application of the
@@ -208,7 +219,7 @@ bool AP_Compass_QMC5883L::init()
             cal[1] > 0.7f && cal[1] < 1.35f &&
             cal[2] > 0.7f && cal[2] < 1.35f) 
 		{
-            // hal.console->printf_P(PSTR("cal=%.2f %.2f %.2f good\n"), cal[0], cal[1], cal[2]);
+            //  hal.console->printf_P(PSTR("  good\n") );
             good_count++;
             calibration[0] += cal[0];
             calibration[1] += cal[1];
@@ -222,31 +233,32 @@ bool AP_Compass_QMC5883L::init()
 #endif
     }
 
+	//hal.console->printf_P(PSTR("good_count: %d  \n"),good_count);
     if (good_count >= 5)
-	{
-        /*
-          The use of gain_multiple below is incorrect, as the gain
-          difference between 2.5Ga mode and 1Ga mode is already taken
-          into account by the expected_x and expected_yz values.  We
-          are not going to fix it however as it would mean all
-          APM1/APM2 users redoing their compass calibration. The
-          impact is that the values we report on APM1/APM2 are lower
-          than they should be (by a multiple of about 0.6). This
-          doesn't have any impact other than the learned compass
-          offsets
-         */
-        calibration[0] = calibration[0] * gain_multiple / good_count;
-        calibration[1] = calibration[1] * gain_multiple / good_count;
-        calibration[2] = calibration[2] * gain_multiple / good_count;
-        success = true;
-    } 
+						{
+							/*
+							  The use of gain_multiple below is incorrect, as the gain
+							  difference between 2.5Ga mode and 1Ga mode is already taken
+							  into account by the expected_x and expected_yz values.  We
+							  are not going to fix it however as it would mean all
+							  APM1/APM2 users redoing their compass calibration. The
+							  impact is that the values we report on APM1/APM2 are lower
+							  than they should be (by a multiple of about 0.6). This
+							  doesn't have any impact other than the learned compass
+							  offsets
+							 */
+							calibration[0] = calibration[0] * gain_multiple / good_count;
+							calibration[1] = calibration[1] * gain_multiple / good_count;
+							calibration[2] = calibration[2] * gain_multiple / good_count;
+							success = true;
+						} 
 	else
-	{
-        /* best guess */
-        calibration[0] = 1.0;
-        calibration[1] = 1.0;
-        calibration[2] = 1.0;
-    }
+			{
+				/* best guess */
+				calibration[0] = 1.0;
+				calibration[1] = 1.0;
+				calibration[2] = 1.0;
+			}
 
     // leave test mode
     if (!re_initialise()) 
@@ -266,7 +278,7 @@ bool AP_Compass_QMC5883L::init()
     hal.console->printf_P(PSTR("CalX: %.2f CalY: %.2f CalZ: %.2f\n"), calibration[0], calibration[1], calibration[2]);
 #endif
 
-    return success;
+    return true;//success;
 }
 
 // Read Sensor data
@@ -290,7 +302,7 @@ bool AP_Compass_QMC5883L::read()
 
 	if (_accum_count == 0) 
 	{
-	   accumulate();
+	   accumulate();///---> read_raw();
 	   if (!_healthy[0] || _accum_count == 0)
 	   {
 		  // try again in 1 second, and set I2c clock speed slower
