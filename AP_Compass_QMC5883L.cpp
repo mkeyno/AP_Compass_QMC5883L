@@ -252,7 +252,7 @@ bool AP_Compass_QMC5883L::init()
 							calibration[2] = calibration[2] * gain_multiple / good_count;
 							success = true;
 						} 
-	else
+	else //always run 
 			{
 				/* best guess */
 				calibration[0] = 1.0;
@@ -278,7 +278,7 @@ bool AP_Compass_QMC5883L::init()
     hal.console->printf_P(PSTR("CalX: %.2f CalY: %.2f CalZ: %.2f\n"), calibration[0], calibration[1], calibration[2]);
 #endif
 
-    return true;//success;
+    return true;//always success;
 }
 
 // Read Sensor data
